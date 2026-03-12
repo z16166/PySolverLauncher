@@ -1,49 +1,49 @@
 # PySolverLauncher
 
-一个用于管理和自动更新 Windows 命令行求解器（如 `solver_fast.exe`）的 Python 脚本。
+A Python-based utility to manage and auto-update Windows command-line solvers (e.g., `solver_fast.exe`).
 
-## 功能特性
+## Features
 
-- **动态可执行文件解析**：从 `cmd.txt` 自动读取并解析执行命令。
-- **自动补全后缀**：自动为可执行文件名补全 `.exe` 后缀。
-- **独立控制台窗口**：求解器在独立的控制台窗口中运行，日志清晰互不干扰。
-- **自动检测更新**：后台定时（1-3 分钟随机）请求 API 检测新版本。
-- **高效 SHA1 缓存**：通过文件时间戳和大小判断是否需要重新计算 SHA1，减少磁盘 IO。
-- **安全停止逻辑**：更新时先发送控制事件请求安全退出，15 秒超时后才强制终止。
-- **历史版本备份**：下载新版时若同名压缩包已存在，自动重命名备份旧版本。
+- **Dynamic Executable Parsing**: Automatically parses the executable name from `cmd.txt`.
+- **Auto Suffix Handling**: Automatically appends the `.exe` suffix if missing in the configuration.
+- **Separate Console Window**: Runs the solver in its own console window via `CREATE_NEW_CONSOLE` to keep logs clean and separate.
+- **Auto-Update Detection**: A background thread checks for new versions at random intervals (1-3 minutes).
+- **Efficient SHA1 Caching**: Verifies local versions using file metadata (mtime and size) before recalculating SHA1 to reduce disk I/O.
+- **Safe Termination Logic**: Attempts graceful shutdown (CTRL_BREAK and `taskkill`) before falling back to force termination after a 15-second timeout.
+- **Version Bundling/Backup**: Automatically renames and backups existing update ZIPs if their SHA1 differs from the new one.
 
-## 快速开始
+## Quick Start
 
-### 1. 配置环境
-确保已安装 Python 3.x 以及 `requests` 库：
+### 1. Install Dependencies
+Ensure you have Python 3.x and the `requests` library installed:
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. 配置启动指令 `cmd.txt`
-在脚本同级目录下创建 `cmd.txt`，写入完整的求解器运行指令。
-例如：
+### 2. Configure `cmd.txt`
+Create a `cmd.txt` file in the same directory as the script and add your solver's full execution command.
+Example:
 ```text
 solver_fast.exe --server ecdlp.protect.cx --worker-name "WhoCares" --gpu-limit 100 --resume
 ```
-*注：即使只写 `solver_fast`，脚本也会自动识别为 `solver_fast.exe`。*
+*Note: If you only provide `solver_fast`, the script will automatically look for `solver_fast.exe`.*
 
-### 3. 运行程序
+### 3. Run the Launcher
 ```bash
 python launcher.py
 ```
 
-## 更新机制
+## Update Mechanism
 
-脚本会定期访问以下接口：
-`https://HOST/api/download-info` （HOST 从 `cmd.txt` 的 `--server` 参数提取）
+The script periodically checks the following endpoint:
+`https://HOST/api/download-info` (where HOST is extracted from the `--server` argument in `cmd.txt`).
 
-如果接口返回的 `sha1` 与本地文件不符，脚本将：
-1. 下载新的压缩包。
-2. 请求旧版求解器安全退出。
-3. 解压并覆盖当前目录文件。
-4. 重新启动求解器。
+If the remote `sha1` differs from the local copy, the script will:
+1. Download the new ZIP bundle.
+2. Request the current solver to stop safely.
+3. Extract and overwrite the files in the current directory.
+4. Restart the solver with the original command.
 
-## 注意事项
-- 脚本依赖 `cmd.txt` 进行初始化，请确保该文件存在且配置正确。
-- 请勿将 `cmd.txt` 提交至公共仓库以防配置冲突或泄露。
+## Important Notes
+- The script relies on `cmd.txt` for initialization. Ensure it is correctly configured.
+- `cmd.txt` is excluded from Git to prevent configuration conflicts or exposure of private settings.
