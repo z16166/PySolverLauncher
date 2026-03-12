@@ -25,6 +25,9 @@ class SolverLauncher:
         # Track applied version (ZIP SHA1)
         self.applied_sha1 = self.read_applied_version()
         
+        # Concurrency control
+        self.lock = threading.Lock()
+        self.is_updating = False
         self.running = True
 
     def read_applied_version(self):
@@ -95,79 +98,74 @@ class SolverLauncher:
         return sha1.hexdigest()
 
     def run_solver(self):
-        # Use a more robust check for the executable
-        if not os.path.exists(self.solver_exe):
-            print(f"Error: {self.solver_exe} not found in current directory.")
-            return
+        with self.lock:
+            # Use a more robust check for the executable
+            if not os.path.exists(self.solver_exe):
+                print(f"Error: {self.solver_exe} not found in current directory.")
+                return
 
-        print(f"Starting {self.solver_exe} with command: {self.cmd}")
-        
-        # Determine the absolute path and directory of the solver
-        abs_exe_path = os.path.abspath(self.solver_exe)
-        solver_dir = os.path.dirname(abs_exe_path)
-        
-        # On Windows, passing the command as a raw string is often more reliable
-        # than a list when using CREATE_NEW_CONSOLE, especially for escaping.
-        # We ensure the first part of self.cmd is the absolute path if needed, 
-        # but self.cmd already comes from cmd.txt which the user configured.
-        
-        try:
-            # CREATE_NEW_CONSOLE: Starts the process in a new console window.
-            # CREATE_NEW_PROCESS_GROUP: Essential for reliable signal handling (Ctrl+Break).
-            # close_fds=True: Prevents the child from inheriting the launcher's open handles.
-            # stdin=subprocess.DEVNULL: Prevents blocking on parent input.
-            creation_flags = subprocess.CREATE_NEW_CONSOLE | subprocess.CREATE_NEW_PROCESS_GROUP
+            print(f"Starting {self.solver_exe} with command: {self.cmd}")
             
-            self.process = subprocess.Popen(
-                self.cmd, 
-                shell=False, 
-                stdin=subprocess.DEVNULL,
-                stdout=None,
-                stderr=None,
-                cwd=solver_dir,
-                close_fds=True,
-                creationflags=creation_flags
-            )
-            print(f"Solver started with PID: {self.process.pid} in directory: {solver_dir}")
-        except Exception as e:
-            print(f"Failed to start solver: {e}")
+            # Determine the absolute path and directory of the solver
+            abs_exe_path = os.path.abspath(self.solver_exe)
+            solver_dir = os.path.dirname(abs_exe_path)
+            
+            try:
+                # CREATE_NEW_CONSOLE: Starts the process in a new console window.
+                # CREATE_NEW_PROCESS_GROUP: Essential for reliable signal handling (Ctrl+Break).
+                # close_fds=True: Prevents the child from inheriting the launcher's open handles.
+                # stdin=subprocess.DEVNULL: Prevents blocking on parent input.
+                creation_flags = subprocess.CREATE_NEW_CONSOLE | subprocess.CREATE_NEW_PROCESS_GROUP
+                
+                self.process = subprocess.Popen(
+                    self.cmd, 
+                    shell=False, 
+                    stdin=subprocess.DEVNULL,
+                    stdout=None,
+                    stderr=None,
+                    cwd=solver_dir,
+                    close_fds=True,
+                    creationflags=creation_flags
+                )
+                print(f"Solver started with PID: {self.process.pid} in directory: {solver_dir}")
+            except Exception as e:
+                print(f"Failed to start solver: {e}")
 
     def stop_solver(self):
-        if self.process and self.process.poll() is None:
-            pid = self.process.pid
-            print(f"Stopping {self.solver_exe} (PID: {pid}) safely (sending CTRL_BREAK_EVENT)...")
-            
-            # 1. Try CTRL_BREAK_EVENT first, often more reliable for process groups on Windows
-            try:
-                os.kill(pid, signal.CTRL_BREAK_EVENT)
-            except Exception as e:
-                print(f"Error sending Ctrl+Break: {e}")
-            
-            # 2. As a fallback for "safe" exit, try taskkill without /F (force)
-            # This sends a WM_CLOSE or similar request to the process.
-            try:
-                subprocess.run(["taskkill", "/pid", str(pid)], capture_output=True)
-            except Exception as e:
-                print(f"Error running taskkill: {e}")
-
-            try:
-                # Wait for graceful exit (15 seconds total)
-                for i in range(15):
-                    if self.process.poll() is not None:
-                        break
-                    if i == 7: # Halfway through, try taskkill again just in case
-                         subprocess.run(["taskkill", "/pid", str(pid)], capture_output=True)
-                    time.sleep(1)
+        with self.lock:
+            if self.process and self.process.poll() is None:
+                pid = self.process.pid
+                print(f"Stopping {self.solver_exe} (PID: {pid}) safely (sending CTRL_BREAK_EVENT)...")
                 
-                if self.process.poll() is None:
-                    print(f"Timeout expired. Force killing {self.solver_exe}...")
+                # 1. Try CTRL_BREAK_EVENT first
+                try:
+                    os.kill(pid, signal.CTRL_BREAK_EVENT)
+                except Exception as e:
+                    print(f"Error sending Ctrl+Break: {e}")
+                
+                # 2. As a fallback, try taskkill
+                try:
+                    subprocess.run(["taskkill", "/pid", str(pid)], capture_output=True)
+                except Exception as e:
+                    print(f"Error running taskkill: {e}")
+
+                try:
+                    for i in range(15):
+                        if self.process.poll() is not None:
+                            break
+                        if i == 7:
+                             subprocess.run(["taskkill", "/pid", str(pid)], capture_output=True)
+                        time.sleep(1)
+                    
+                    if self.process.poll() is None:
+                        print(f"Timeout expired. Force killing {self.solver_exe}...")
+                        self.process.kill()
+                        self.process.wait()
+                    else:
+                        print(f"{self.solver_exe} stopped safely.")
+                except Exception as e:
+                    print(f"Error while waiting for process: {e}")
                     self.process.kill()
-                    self.process.wait()
-                else:
-                    print(f"{self.solver_exe} stopped safely.")
-            except Exception as e:
-                print(f"Error while waiting for process: {e}")
-                self.process.kill()
 
     def download_and_update(self, download_url, filename, remote_sha1):
         if os.path.exists(filename):
@@ -189,21 +187,26 @@ class SolverLauncher:
                 f.write(response.content)
             print(f"Download successful: {filename}")
             
-            self.stop_solver()
-            
-            print(f"Extracting {filename}...")
-            # Get current directory absolute path for clear logging if needed
-            current_dir = os.getcwd()
-            with zipfile.ZipFile(filename, 'r') as zip_ref:
-                zip_ref.extractall(current_dir)
-            
-            print("Update applied successfully.")
-            # Update the applied version file
-            self.save_applied_version(remote_sha1)
-            os.remove(filename)
-            self.run_solver()
+            # Set updating flag to prevent main loop from interfering
+            self.is_updating = True
+            try:
+                self.stop_solver()
+                
+                print(f"Extracting {filename}...")
+                current_dir = os.getcwd()
+                with zipfile.ZipFile(filename, 'r') as zip_ref:
+                    zip_ref.extractall(current_dir)
+                
+                print("Update applied successfully.")
+                self.save_applied_version(remote_sha1)
+                os.remove(filename)
+                self.run_solver()
+            finally:
+                self.is_updating = False
+                
         except Exception as e:
             print(f"Update failed: {e}")
+            self.is_updating = False
 
     def check_for_updates(self):
         api_url = f"https://{self.host}/api/download-info"
@@ -215,9 +218,8 @@ class SolverLauncher:
             
             if data.get("available"):
                 remote_sha1 = data.get("sha1")
-                # Compare JSON sha1 (ZIP) with the last successfully applied version
                 if self.applied_sha1 != remote_sha1:
-                    print(f"New update detected. Applied version: {self.applied_sha1 or 'None'}, New version: {remote_sha1}")
+                    print(f"New update detected. New version: {remote_sha1}")
                     filename = data.get("filename")
                     download_url = f"https://{self.host}/download/{filename}"
                     self.download_and_update(download_url, filename, remote_sha1)
@@ -226,10 +228,8 @@ class SolverLauncher:
         except Exception as e:
             print(f"Error checking for updates: {e}")
 
-
     def update_loop(self):
         while self.running:
-            # Random interval between 1 and 3 minutes
             wait_time = random.randint(UPDATE_INTERVAL_MIN * 60, UPDATE_INTERVAL_MAX * 60)
             print(f"Next update check in {wait_time // 60} minutes and {wait_time % 60} seconds.")
             time.sleep(wait_time)
@@ -242,10 +242,19 @@ class SolverLauncher:
         
         try:
             while True:
-                if self.process and self.process.poll() is not None:
-                    print(f"{self.solver_exe} exited unexpectedly. Restarting in 5 seconds...")
+                # Use lock to safely check and restart process
+                with self.lock:
+                    if not self.is_updating and self.process and self.process.poll() is not None:
+                        print(f"{self.solver_exe} exited unexpectedly. Restarting in 5 seconds...")
+                        # Release lock briefly to allow sleep and keep launcher responsive
+                
+                # Check again outside lock for sleep part to avoid holding lock during sleep
+                if not self.is_updating and self.process and self.process.poll() is not None:
                     time.sleep(5)
-                    self.run_solver()
+                    # Re-check in case an update started during the sleep
+                    if not self.is_updating:
+                        self.run_solver()
+                
                 time.sleep(1)
         except KeyboardInterrupt:
             print("Launcher shutting down...")
