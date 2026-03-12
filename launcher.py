@@ -95,12 +95,30 @@ class SolverLauncher:
         return sha1.hexdigest()
 
     def run_solver(self):
+        # Use a more robust check for the executable
+        if not os.path.exists(self.solver_exe):
+            print(f"Error: {self.solver_exe} not found in current directory.")
+            return
+
         print(f"Starting {self.solver_exe} with command: {self.cmd}")
+        
         # Use shlex.split with posix=False to correctly handle Windows paths and quotes
         args = shlex.split(self.cmd, posix=False)
-        # Use CREATE_NEW_CONSOLE to open the solver in its own window
-        # This keeps the launcher and solver logs separate.
-        self.process = subprocess.Popen(args, shell=False, creationflags=subprocess.CREATE_NEW_CONSOLE)
+        # Ensure we use an absolute path for the executable to avoid resolution issues
+        args[0] = os.path.abspath(self.solver_exe)
+        
+        # Use CREATE_NEW_CONSOLE to open the solver in its own window.
+        # Explicitly set stdin=subprocess.DEVNULL to prevent the child from blocking 
+        # on parent input or unread pipes.
+        # stdout and stderr remain None so they show up in the new console window.
+        self.process = subprocess.Popen(
+            args, 
+            shell=False, 
+            stdin=subprocess.DEVNULL,
+            stdout=None,
+            stderr=None,
+            creationflags=subprocess.CREATE_NEW_CONSOLE
+        )
 
     def stop_solver(self):
         if self.process and self.process.poll() is None:
