@@ -11,6 +11,7 @@ import signal
 from urllib.parse import urlparse
 import shlex
 
+VERSION_FILE = "update.ver"
 CMD_FILE = "cmd.txt"
 UPDATE_INTERVAL_MIN = 1
 UPDATE_INTERVAL_MAX = 3
@@ -21,12 +22,27 @@ class SolverLauncher:
         self.cmd, self.solver_exe = self.read_cmd_and_exe()
         self.host = self.extract_host(self.cmd)
         
-        # Enhanced cache for local SHA1
-        self.cached_sha1 = None
-        self.cached_mtime = None
-        self.cached_size = None
+        # Track applied version (ZIP SHA1)
+        self.applied_sha1 = self.read_applied_version()
         
         self.running = True
+
+    def read_applied_version(self):
+        if os.path.exists(VERSION_FILE):
+            try:
+                with open(VERSION_FILE, 'r', encoding='utf-8') as f:
+                    return f.read().strip()
+            except Exception as e:
+                print(f"Error reading {VERSION_FILE}: {e}")
+        return ""
+
+    def save_applied_version(self, sha1):
+        try:
+            with open(VERSION_FILE, 'w', encoding='utf-8') as f:
+                f.write(sha1)
+            self.applied_sha1 = sha1
+        except Exception as e:
+            print(f"Error saving {VERSION_FILE}: {e}")
 
     def read_cmd_and_exe(self):
         if not os.path.exists(CMD_FILE):
@@ -77,33 +93,6 @@ class SolverLauncher:
                     break
                 sha1.update(data)
         return sha1.hexdigest()
-
-    def get_local_sha1_with_cache(self):
-        if not os.path.exists(self.solver_exe):
-            return None
-            
-        try:
-            stat = os.stat(self.solver_exe)
-            current_mtime = stat.st_mtime
-            current_size = stat.st_size
-            
-            # If metadata matches, return cached SHA1
-            if (self.cached_sha1 and 
-                self.cached_mtime == current_mtime and 
-                self.cached_size == current_size):
-                return self.cached_sha1
-            
-            # Otherwise, recalculate and update cache
-            print(f"Recalculating SHA1 for {self.solver_exe} (metadata changed or cache empty)...")
-            self.cached_sha1 = self.get_sha1(self.solver_exe)
-            self.cached_mtime = current_mtime
-            self.cached_size = current_size
-            return self.cached_sha1
-            
-        except Exception as e:
-            print(f"Error checking file metadata: {e}")
-            # Fallback to direct calculation if stat fails
-            return self.get_sha1(self.solver_exe)
 
     def run_solver(self):
         print(f"Starting {self.solver_exe} with command: {self.cmd}")
@@ -179,8 +168,8 @@ class SolverLauncher:
                 zip_ref.extractall(current_dir)
             
             print("Update applied successfully.")
-            # Clear cache to force recalculation on next check (or we could update it here)
-            self.cached_sha1 = None 
+            # Update the applied version file
+            self.save_applied_version(remote_sha1)
             os.remove(filename)
             self.run_solver()
         except Exception as e:
@@ -196,18 +185,17 @@ class SolverLauncher:
             
             if data.get("available"):
                 remote_sha1 = data.get("sha1")
-                # Use the metadata-aware cached local SHA1
-                local_sha1 = self.get_local_sha1_with_cache()
-                
-                if local_sha1 != remote_sha1:
-                    print(f"New version detected. Local SHA1: {local_sha1}, Remote SHA1: {remote_sha1}")
+                # Compare JSON sha1 (ZIP) with the last successfully applied version
+                if self.applied_sha1 != remote_sha1:
+                    print(f"New update detected. Applied version: {self.applied_sha1 or 'None'}, New version: {remote_sha1}")
                     filename = data.get("filename")
                     download_url = f"https://{self.host}/download/{filename}"
                     self.download_and_update(download_url, filename, remote_sha1)
                 else:
-                    print("Local version is up to date.")
+                    print(f"Already at version {self.applied_sha1}. No update needed.")
         except Exception as e:
             print(f"Error checking for updates: {e}")
+
 
     def update_loop(self):
         while self.running:

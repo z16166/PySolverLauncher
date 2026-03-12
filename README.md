@@ -8,7 +8,7 @@ A Python-based utility to manage and auto-update Windows command-line solvers (e
 - **Auto Suffix Handling**: Automatically appends the `.exe` suffix if missing in the configuration.
 - **Separate Console Window**: Runs the solver in its own console window via `CREATE_NEW_CONSOLE` to keep logs clean and separate.
 - **Auto-Update Detection**: A background thread checks for new versions at random intervals (1-3 minutes).
-- **Efficient SHA1 Caching**: Verifies local versions using file metadata (mtime and size) before recalculating SHA1 to reduce disk I/O.
+- **Efficient Version Tracking**: Uses a persistent `update.ver` file to track the last successfully applied update's SHA1 (ZIP-based), avoiding unnecessary downloads.
 - **Safe Termination Logic**: Attempts graceful shutdown (CTRL_BREAK and `taskkill`) before falling back to force termination after a 15-second timeout.
 - **Version Bundling/Backup**: Automatically renames and backups existing update ZIPs if their SHA1 differs from the new one.
 
@@ -38,7 +38,7 @@ python launcher.py
 The script periodically checks the following endpoint:
 `https://HOST/api/download-info` (where HOST is extracted from the `--server` argument in `cmd.txt`).
 
-If the remote `sha1` differs from the local copy, the script will:
+If the remote `sha1` differs from the version stored in `update.ver`, the script will:
 1. Download the new ZIP bundle from `https://HOST/download/filename`.
 2. Request the current solver to stop safely.
 3. Extract and overwrite the files in the current directory.

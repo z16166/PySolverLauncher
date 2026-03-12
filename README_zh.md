@@ -38,7 +38,7 @@ python launcher.py
 脚本会定期访问以下接口：
 `https://HOST/api/download-info` （HOST 从 `cmd.txt` 的 `--server` 参数提取）
 
-如果接口返回的 `sha1` 与本地文件不符，脚本将：
+如果接口返回的 `sha1` 与本地 `update.ver` 中的记录不符，脚本将：
 1. 下载新的压缩包（地址为 `https://HOST/download/filename`）。
 2. 请求旧版求解器安全退出。
 3. 解压并覆盖当前目录文件。
