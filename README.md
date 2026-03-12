@@ -39,7 +39,7 @@ The script periodically checks the following endpoint:
 `https://HOST/api/download-info` (where HOST is extracted from the `--server` argument in `cmd.txt`).
 
 If the remote `sha1` differs from the local copy, the script will:
-1. Download the new ZIP bundle.
+1. Download the new ZIP bundle from `https://HOST/download/filename`.
 2. Request the current solver to stop safely.
 3. Extract and overwrite the files in the current directory.
 4. Restart the solver with the original command.

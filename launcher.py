@@ -202,7 +202,7 @@ class SolverLauncher:
                 if local_sha1 != remote_sha1:
                     print(f"New version detected. Local SHA1: {local_sha1}, Remote SHA1: {remote_sha1}")
                     filename = data.get("filename")
-                    download_url = f"https://{self.host}/{filename}"
+                    download_url = f"https://{self.host}/download/{filename}"
                     self.download_and_update(download_url, filename, remote_sha1)
                 else:
                     print("Local version is up to date.")

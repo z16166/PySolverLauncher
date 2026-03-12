@@ -39,7 +39,7 @@ python launcher.py
 `https://HOST/api/download-info` （HOST 从 `cmd.txt` 的 `--server` 参数提取）
 
 如果接口返回的 `sha1` 与本地文件不符，脚本将：
-1. 下载新的压缩包。
+1. 下载新的压缩包（地址为 `https://HOST/download/filename`）。
 2. 请求旧版求解器安全退出。
 3. 解压并覆盖当前目录文件。
 4. 重新启动求解器。
