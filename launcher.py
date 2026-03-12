@@ -245,17 +245,17 @@ class SolverLauncher:
                 # Use lock to safely check and restart process
                 with self.lock:
                     if not self.is_updating and self.process and self.process.poll() is not None:
-                        print(f"{self.solver_exe} exited unexpectedly. Restarting in 5 seconds...")
+                        print(f"{self.solver_exe} exited unexpectedly. Restarting in 15 seconds...")
                         # Release lock briefly to allow sleep and keep launcher responsive
                 
                 # Check again outside lock for sleep part to avoid holding lock during sleep
                 if not self.is_updating and self.process and self.process.poll() is not None:
-                    time.sleep(5)
+                    time.sleep(15)
                     # Re-check in case an update started during the sleep
                     if not self.is_updating:
                         self.run_solver()
                 
-                time.sleep(1)
+                time.sleep(2)
         except KeyboardInterrupt:
             print("Launcher shutting down...")
             self.running = False
