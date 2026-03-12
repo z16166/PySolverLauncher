@@ -102,23 +102,35 @@ class SolverLauncher:
 
         print(f"Starting {self.solver_exe} with command: {self.cmd}")
         
-        # Use shlex.split with posix=False to correctly handle Windows paths and quotes
-        args = shlex.split(self.cmd, posix=False)
-        # Ensure we use an absolute path for the executable to avoid resolution issues
-        args[0] = os.path.abspath(self.solver_exe)
+        # Determine the absolute path and directory of the solver
+        abs_exe_path = os.path.abspath(self.solver_exe)
+        solver_dir = os.path.dirname(abs_exe_path)
         
-        # Use CREATE_NEW_CONSOLE to open the solver in its own window.
-        # Explicitly set stdin=subprocess.DEVNULL to prevent the child from blocking 
-        # on parent input or unread pipes.
-        # stdout and stderr remain None so they show up in the new console window.
-        self.process = subprocess.Popen(
-            args, 
-            shell=False, 
-            stdin=subprocess.DEVNULL,
-            stdout=None,
-            stderr=None,
-            creationflags=subprocess.CREATE_NEW_CONSOLE
-        )
+        # On Windows, passing the command as a raw string is often more reliable
+        # than a list when using CREATE_NEW_CONSOLE, especially for escaping.
+        # We ensure the first part of self.cmd is the absolute path if needed, 
+        # but self.cmd already comes from cmd.txt which the user configured.
+        
+        try:
+            # CREATE_NEW_CONSOLE: Starts the process in a new console window.
+            # CREATE_NEW_PROCESS_GROUP: Essential for reliable signal handling (Ctrl+Break).
+            # close_fds=True: Prevents the child from inheriting the launcher's open handles.
+            # stdin=subprocess.DEVNULL: Prevents blocking on parent input.
+            creation_flags = subprocess.CREATE_NEW_CONSOLE | subprocess.CREATE_NEW_PROCESS_GROUP
+            
+            self.process = subprocess.Popen(
+                self.cmd, 
+                shell=False, 
+                stdin=subprocess.DEVNULL,
+                stdout=None,
+                stderr=None,
+                cwd=solver_dir,
+                close_fds=True,
+                creationflags=creation_flags
+            )
+            print(f"Solver started with PID: {self.process.pid} in directory: {solver_dir}")
+        except Exception as e:
+            print(f"Failed to start solver: {e}")
 
     def stop_solver(self):
         if self.process and self.process.poll() is None:
