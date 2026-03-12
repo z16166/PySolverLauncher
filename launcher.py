@@ -199,7 +199,7 @@ class SolverLauncher:
                 
                 print("Update applied successfully.")
                 self.save_applied_version(remote_sha1)
-                os.remove(filename)
+                # Keep the ZIP file (it will be renamed as a backup on the next update)
                 self.run_solver()
             finally:
                 self.is_updating = False
